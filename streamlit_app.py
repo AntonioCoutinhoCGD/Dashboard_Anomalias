@@ -4,6 +4,17 @@ import numpy as np
 import altair as alt
 import streamlit as st
 
+LOGO_URL = "https://upload.wikimedia.org/wikipedia/commons/9/9c/CGD_Logo_2017.png"
+
+st.set_page_config(
+    page_title="Ruturas Dashboard",
+    page_icon=LOGO_URL,
+    layout="wide",
+)
+
+c_logo, c_title = st.columns([0.12, 2.55])
+with c_logo:
+    st.image(LOGO_URL, width=72)
 # -------------------------------------------------------------------------
 # Autenticação por username/password usando Streamlit Secrets
 # -------------------------------------------------------------------------
@@ -61,18 +72,10 @@ else:
 # -----------------------------------------------------------------------------
 # Config
 # -----------------------------------------------------------------------------
-LOGO_URL = "https://upload.wikimedia.org/wikipedia/commons/9/9c/CGD_Logo_2017.png"
 
-st.set_page_config(
-    page_title="Ruturas Dashboard",
-    page_icon=LOGO_URL,
-    layout="wide",
-)
 
 # Título com logo
-c_logo, c_title = st.columns([0.12, 0.88])
-with c_logo:
-    st.image(LOGO_URL, width=72)
+
 with c_title:
     st.markdown("<h1 style='margin-bottom:0;'>Ruturas Dashboard</h1>", unsafe_allow_html=True)
 st.write("Carrega um ficheiro CSV")
