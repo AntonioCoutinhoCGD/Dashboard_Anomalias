@@ -2,7 +2,62 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import altair as alt
+import streamlit as st
 
+# -------------------------------------------------------------------------
+# Autenticação por username/password usando Streamlit Secrets
+# -------------------------------------------------------------------------
+# Espera-se que no Secrets (Cloud) exista:
+# [auth]
+# username = "..."
+# password = "..."
+
+AUTH_USER = st.secrets["auth"].get("username", "")
+AUTH_PASS = st.secrets["auth"].get("password", "")
+
+# Inicializa estado de sessão
+if "auth_ok" not in st.session_state:
+    st.session_state.auth_ok = False
+if "auth_user" not in st.session_state:
+    st.session_state.auth_user = None
+
+def do_login(user, pwd):
+    if user == AUTH_USER and pwd == AUTH_PASS:
+        st.session_state.auth_ok = True
+        st.session_state.auth_user = user
+        return True
+    return False
+
+def do_logout():
+    st.session_state.auth_ok = False
+    st.session_state.auth_user = None
+
+# UI de login (aparece se ainda não autenticado)
+if not st.session_state.auth_ok:
+    st.title("Ruturas Dashboard – Login")
+    with st.form("login_form", clear_on_submit=False):
+        col1, col2 = st.columns(2)
+        with col1:
+            user_input = st.text_input("Utilizador", autocomplete="username")
+        with col2:
+            pass_input = st.text_input("Palavra‑passe", type="password", autocomplete="current-password")
+        ok = st.form_submit_button("Entrar")
+    if ok:
+        if do_login(user_input, pass_input):
+            st.success("Autenticado com sucesso. A carregar…")
+            st.rerun()  # recarrega a app já autenticada
+        else:
+            st.error("Credenciais inválidas. Tenta novamente.")
+    st.stop()  # bloqueia o resto da app para não autenticados
+else:
+    # Barra de topo com info + botão sair
+    topc1, topc2 = st.columns([0.8, 0.2])
+    with topc1:
+        st.caption(f"✅ Sessão iniciada como **{st.session_state.auth_user}**")
+    with topc2:
+        if st.button("Terminar sessão", use_container_width=True):
+            do_logout()
+            st.rerun()
 # -----------------------------------------------------------------------------
 # Config
 # -----------------------------------------------------------------------------
