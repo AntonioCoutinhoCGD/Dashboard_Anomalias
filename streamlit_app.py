@@ -131,8 +131,10 @@ DISPLAY_FONTE = {
 # -------------------------------------------------------------------------
 def read_uploaded_csv_v2(file):
     """
-    Novo CSV: [DATA + MÉTRICAS Agências (VTM/ATM)] + [MÉTRICAS Esegur (VTM/ATM)] +
-              [DATA + Justificações] + [DATA + Registos detalhados]
+    Novo CSV:
+      - Bloco principal começa em "Data"
+      - Bloco Justificações começa em "Resposta" (novo) ou "Data" (antigo)
+      - Bloco Eventos começa em "Evento" (novo) ou "Data" (antigo)
     header=1 para ler a segunda linha como nomes de coluna.
     """
     # tentar UTF-8 -> fallback Latin-1
@@ -145,16 +147,31 @@ def read_uploaded_csv_v2(file):
     df.columns = [str(c).strip() for c in df.columns]
     cols = df.columns.tolist()
 
-    # Localizar todas as posições de 'Data'
-    bases = [base_name(c) for c in cols]
-    data_positions = [i for i, b in enumerate(bases) if b == "data"]
+    # ---------------------- localizar separadores ----------------------
+    bases_norm = [normalize_text_pt(base_name(c)) for c in cols]
 
-    if len(data_positions) < 2:
-        raise ValueError("Estrutura inesperada: esperava pelo menos 2 colunas 'Data'.")
+    def find_next(pos0, names_set):
+        for i in range(pos0 + 1, len(bases_norm)):
+            if bases_norm[i] in names_set:
+                return i
+        return None
+
+    # 1) início do bloco principal (tem de existir)
+    try:
+        start_main = bases_norm.index("data")
+    except ValueError:
+        raise ValueError("Estrutura inesperada: não encontrei a 1ª coluna 'Data' (bloco principal).")
+
+    # 2) início do bloco justificações
+    start_j = find_next(start_main, {"data", "resposta"})
+
+    # 3) início do bloco eventos
+    start_e = None
+    if start_j is not None:
+        start_e = find_next(start_j, {"data", "evento"})
 
     # ---------------------- BLOCO PRINCIPAL (Agências + Esegur) ----------------------
-    start_main = data_positions[0]
-    end_main = data_positions[1]
+    end_main = start_j if start_j is not None else len(cols)
     df_mainblk = df.iloc[:, start_main:end_main].copy()
 
     # A primeira coluna deve ser 'Data'. Normalizar datas.
@@ -210,7 +227,7 @@ def read_uploaded_csv_v2(file):
 
     df_daily = pd.concat([df_ag, df_es], ignore_index=True)
 
-    # >>> Garantir que só ficam métricas desejadas (extra safety)
+    # Garantir que só ficam métricas desejadas
     df_daily = df_daily[df_daily["Metrica"].isin(METRICS)].copy()
 
     # Adicionar linha "GERAL" (ATM+VTM) por Fonte e Métrica
@@ -224,19 +241,23 @@ def read_uploaded_csv_v2(file):
     # ---------------------- BLOCO JUSTIFICAÇÕES (matriz diária) ----------------------
     df_just, just_has_date = None, False
     try:
-        start_j = data_positions[1]
-        end_j = data_positions[2] if len(data_positions) >= 3 else len(cols)
+        if start_j is None:
+            raise ValueError("Sem bloco de justificações (não encontrei 'Resposta'/'Data' após o bloco principal).")
+
+        end_j = start_e if start_e is not None else len(cols)
         df_right = df.iloc[:, start_j:end_j].copy()
         df_right.columns = [str(c).strip() for c in df_right.columns]
 
-        data_col_j = None
+        # aceitar "Data" OU "Resposta" como coluna de datas
+        date_col = None
         for c in df_right.columns:
-            if base_name(c) == "data":
-                data_col_j = c
+            b = normalize_text_pt(base_name(c))
+            if b in ("data", "resposta"):
+                date_col = c
                 break
 
-        if data_col_j:
-            df_right.rename(columns={data_col_j: "Data"}, inplace=True)
+        if date_col:
+            df_right.rename(columns={date_col: "Data"}, inplace=True)
             df_right["Data"] = pd.to_datetime(df_right["Data"], errors="coerce").dt.normalize()
             df_right = df_right.dropna(subset=["Data"])
             for c in [c for c in df_right.columns if c != "Data"]:
@@ -253,14 +274,14 @@ def read_uploaded_csv_v2(file):
 
     # ---------------------- BLOCO EVENTOS DETALHADOS ----------------------
     df_events = None
-    if len(data_positions) >= 3:
-        start_e = data_positions[2]
+    if start_e is not None:
         df_events_blk = df.iloc[:, start_e:].copy()
 
         rename_map = {}
         for c in df_events_blk.columns:
             n = normalize_text_pt(c)
-            if n == "data":
+            # aceitar "Data" OU "Evento" como coluna de datas
+            if n in ("data", "evento"):
                 rename_map[c] = "Data"
             elif n.startswith("hora"):
                 rename_map[c] = "Hora_" + c.split()[1] if len(c.split()) > 1 else "Hora"
@@ -280,7 +301,6 @@ def read_uploaded_csv_v2(file):
             if "Data" in dfe.columns:
                 dfe["Data"] = pd.to_datetime(dfe["Data"], errors="coerce").dt.normalize()
 
-            # Classificação da Fonte a partir de AgenciaEmpresa
             if "AgenciaEmpresa" in dfe.columns:
                 dfe["Fonte"] = np.where(
                     dfe["AgenciaEmpresa"].fillna("").str.strip().str.lower() == "esegur",
@@ -292,8 +312,6 @@ def read_uploaded_csv_v2(file):
             df_events = None
 
     return df_daily, df_just, just_has_date, df_events
-
-
 # -------------------------------------------------------------------------
 # Upload + cache em disco
 # -------------------------------------------------------------------------
